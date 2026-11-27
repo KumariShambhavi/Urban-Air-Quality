@@ -1,6 +1,6 @@
 // Vercel serverless function: POST /api/chat
 // Calls Google Gemini (free tier). The API key stays on the server.
-const MODELS = [process.env.GEMINI_MODEL, 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-flash-lite'].filter(Boolean);
+const { getModels, markGood } = require('./_models');
 const hits = new Map();
 let globalHits = []; // tiny per-instance rate limiter to protect the free quota
 
@@ -51,14 +51,14 @@ module.exports = async (req, res) => {
 
   const deadline = Date.now() + 24000; // stay inside Vercel's 30s limit
   const tried = [];
-  for (const model of MODELS) {
+  const { models } = await getModels(key);
+  for (const model of models) {
     const left = deadline - Date.now();
     if (left < 2500) break;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), Math.min(11000, left));
+    const timer = setTimeout(() => ctrl.abort(), Math.min(10000, left));
     try {
-      const gen = { temperature: 0.6, maxOutputTokens: 1200 };
-      if (model.includes('2.5')) gen.thinkingConfig = { thinkingBudget: 0 };
+      const gen = { temperature: 0.6, maxOutputTokens: 2048 };
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',
         signal: ctrl.signal,
@@ -72,7 +72,7 @@ module.exports = async (req, res) => {
       if (!r.ok) { console.error('Gemini', model, r.status); tried.push({ model, status: r.status }); continue; }
       const data = await r.json();
       const reply = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
-      if (reply) return res.status(200).json({ reply, model });
+      if (reply) { markGood(model); return res.status(200).json({ reply, model }); }
       tried.push({ model, status: 'empty' });
     } catch (e) {
       console.error('Gemini error', model, e.name);
