@@ -319,7 +319,7 @@ function saveP(){ store.set('profile', state.p); if (state.air) renderPlan(); }
 function md(t){
   const lines = esc(t).split('\n'); let h = '', inUl = false;
   for (const l of lines) {
-    const li = l.match(/^\s*[-*•]\s+(.*)/); const f = s => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    const li = l.match(/^\s*(?:[-*•]|\d+\.)\s+(.*)/); const f = s => s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<i>$2</i>').replace(/^#+\s*(.*)$/, '<b>$1</b>');
     if (li) { if (!inUl) { h += '<ul>'; inUl = true; } h += `<li>${f(li[1])}</li>`; }
     else { if (inUl) { h += '</ul>'; inUl = false; } if (l.trim()) h += `<p style="margin:4px 0">${f(l)}</p>`; }
   }
@@ -331,7 +331,7 @@ function context(){
   const a = state.air, p = state.p, on = Object.keys(p).filter(k => p[k] === true);
   return `Location: ${state.loc.name}. US AQI now: ${a.aqi} (${band(a.aqi)[1]}). PM2.5: ${Math.round(a.pm25 ?? 0)} ug/m3. Cleanest daytime window: ${state.win ? winLabel(state.win) + ', AQI about ' + state.win.avg : 'unknown'}. Worst daytime hour: ${state.worst ? hr12(state.worst.h) + ', AQI ' + state.worst.a : 'unknown'}. Household: ${on.join(', ') || 'no special groups'}; commute ${p.commute}; cooking ${p.cooking}; heating ${p.heating}.`;
 }
-function offline(q){
+var offline = function offline(q){
   if (!state.air) return 'Pick a city first so I can use live air data. Meanwhile: keep windows shut during smog peaks, wear a fitted N95 outdoors, and run a purifier in the bedroom.';
   const a = state.air.aqi, wl = state.win ? winLabel(state.win) : 'midday', s = q.toLowerCase();
   if (/kid|child|school|play|baby/.test(s)) return a > 150 ? `- AQI is ${a}. Keep kids indoors for play today.\n- If they must go out, use a fitted child-size N95 and travel during ${wl}.\n- Ask school to move PE indoors.` : `- AQI is ${a}. Short outdoor play is okay, best during ${wl}.\n- Watch for coughing or wheezing and head in if it starts.`;
@@ -342,7 +342,7 @@ function offline(q){
   if (/car|commute|metro|bus|travel|bike/.test(s)) return '- Metro or bus emit about 30 to 45 g CO₂ per passenger-km versus about 170 g for a solo car.\n- Use the switch calculator above to see your weekly and yearly savings.';
   if (/heat|heater|bonfire|burn/.test(s)) return '- Never burn wood, coal or trash in a closed room because of carbon monoxide.\n- Use layers, quilts or a safe electric heater.';
   return `- AQI in ${state.loc.name} is ${a} (${band(a)[1]}).\n- Best time outdoors: ${wl}.\n- Keep windows closed outside that window, run a purifier in the bedroom, and wear an N95 when outdoors.`;
-}
+};
 function reason(e){
   if (!e) return 'The AI did not respond.';
   if (e.name === 'AbortError') return 'The AI took too long to answer.';
@@ -355,24 +355,48 @@ function reason(e){
   if (s.includes(429)) return 'The free AI quota is used up for now.';
   return 'The AI service is busy or offline.';
 }
+
+// ---------- answer questions about ANY city ----------
+async function placeIntent(text){
+  const t = text.trim().replace(/[?!.]+$/, '');
+  if (/^(hi|hello|hey|thanks?|thank you|ok|okay|yes|no|help)\b/i.test(t)) return null;
+  const m = t.match(/\b(?:in|for|at|near|about|of)\s+([a-z][a-z .'-]{2,30})$/i) || t.match(/\b(?:in|for|at|near|about|of)\s+([a-z][a-z .'-]{2,30})\b/i);
+  let phrase = m ? m[1] : (t.split(/\s+/).length <= 3 && /^[a-z .'-]{3,30}$/i.test(t) ? t : null);
+  if (!phrase) return null; phrase = phrase.trim().toLowerCase(); if (phrase.split(/\s+/).length > 3) return null;
+  try {
+    const g = await jget(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(phrase)}&count=3&language=en`);
+    const c = (g.results || []).find(x => /^(PPL|ADM)/.test(x.feature_code || '') && (phrase.includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(phrase)));
+    if (!c || (state.loc && c.name === state.loc.name)) return null;
+    const d = await jget(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${c.latitude}&longitude=${c.longitude}&current=us_aqi,pm2_5`);
+    if (d.current?.us_aqi == null) return null;
+    return { name: c.name, lat: c.latitude, lon: c.longitude, aqi: Math.round(d.current.us_aqi), pm25: d.current.pm2_5 };
+  } catch { return null; }
+}
+const placeCtx = p => p ? ` OTHER PLACE ASKED ABOUT: ${p.name}: US AQI ${p.aqi} (${band(p.aqi)[1]}), PM2.5 ${Math.round(p.pm25 ?? 0)} ug/m3 right now. Answer for that place with these live numbers.` : '';
+function attachSwitch(el, p){
+  if (!p) return; const b = document.createElement('button'); b.className = 'ghost'; b.style.marginTop = '8px';
+  b.textContent = `Show ${p.name} on my dashboard`; b.onclick = () => { setLoc(p.name, p.lat, p.lon); window.scrollTo({ top: 0, behavior: 'smooth' }); }; el.appendChild(b);
+}
+const offlineBase = offline;
+offline = (q, p) => (p ? `- ${p.name}: US AQI ${p.aqi} (${band(p.aqi)[1]}), PM2.5 ${Math.round(p.pm25 ?? 0)} µg/m³ right now.\n` : '') + offlineBase(q);
 let busy = false;
 async function ask(text){
   text = text.trim(); if (!text || busy) return; busy = true; $('#msg').value = ''; addMsg('user', text);
-  chat.push({ role: 'user', text }); const wait = addMsg('bot', 'Thinking... (can take up to 20 seconds)');
+  chat.push({ role: 'user', text }); const wait = addMsg('bot', 'Thinking... (can take up to 20 seconds)'); const place = await placeIntent(text);
   try {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 55000);
-    const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal, body: JSON.stringify({ messages: chat.slice(-8), context: context() }) });
+    const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal, body: JSON.stringify({ messages: chat.slice(-8), context: context() + placeCtx(place) }) });
     clearTimeout(t); if (!r.ok) { let j = {}; try { j = await r.json(); } catch {} throw Object.assign(j, { status: r.status }); } const d = await r.json(); if (!d.reply) throw {};
-    wait.remove(); addMsg('bot', d.reply); chat.push({ role: 'model', text: d.reply });
+    wait.remove(); attachSwitch(addMsg('bot', d.reply), place); chat.push({ role: 'model', text: d.reply });
   } catch (e) {
-    const o = offline(text); wait.remove(); addMsg('bot', o, 'Basic guidance mode. ' + reason(e)); chat.push({ role: 'model', text: o });
+    const o = offline(text, place); wait.remove(); attachSwitch(addMsg('bot', o, 'Basic guidance mode. ' + reason(e)), place); chat.push({ role: 'model', text: o });
   } finally { busy = false; }
 }
 $('#send').onclick = () => ask($('#msg').value); $('#msg').onkeydown = e => { if (e.key === 'Enter') ask($('#msg').value); };
 const PROMPTS = ['Can my child play outside today?', 'Plan my day around the smog', 'Cheap ways to clean my bedroom air', 'Which mask should I buy?', 'How can my colony cut smog?'];
 $('#prompts').innerHTML = PROMPTS.map(p => `<button class="ghost">${p}</button>`).join('');
 $('#prompts').onclick = e => { if (e.target.tagName === 'BUTTON') ask(e.target.textContent); };
-addMsg('bot', 'Hi! Pick your city and household details, then ask me anything about smog, your routine or your home. I use your live AQI to answer.');
+addMsg('bot', 'Hi! Ask me anything about smog, your routine or your home. I use your live AQI and household details. You can also ask about another city, for example: How is the air in Patna?');
 
 
 // ---------- live updates, outlook, ranking, score ----------

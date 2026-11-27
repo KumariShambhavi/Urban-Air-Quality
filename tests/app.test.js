@@ -6,13 +6,13 @@ const { JSDOM } = require('jsdom');
 const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
 
 const hourly = () => { const time = [], us_aqi = []; for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) { time.push(`2026-12-${String(1 + d).padStart(2, '0')}T${String(h).padStart(2, '0')}:00`); us_aqi.push(h < 9 || h > 18 ? 230 : 130); } return { time, us_aqi }; };
-let chatMode = 'ok', chatCalls = 0;
+let chatMode = 'ok', chatCalls = 0, lastChat = null;
 const J = o => Promise.resolve({ ok: true, json: () => Promise.resolve(o) });
-function mockFetch(url) {
+function mockFetch(url, opts) {
   url = String(url);
   if (url.includes('air-quality-api')) { const n = url.match(/latitude=([^&]+)/)[1].split(',').length; return n > 1 ? J(Array.from({ length: n }, (_, i) => ({ current: { us_aqi: 90 + i * 15 } }))) : J({ current: { time: '2026-12-01T14:00', us_aqi: 178, pm2_5: 96, pm10: 150, nitrogen_dioxide: 40, ozone: 30 }, hourly: hourly() }); }
-  if (url.includes('geocoding')) return J({ results: [{ name: 'Patna <b>x</b>', admin1: 'Bihar', country: 'India', latitude: 25.6, longitude: 85.1 }] });
-  if (url.includes('/api/chat')) { chatCalls++; return chatMode === 'fail' ? Promise.resolve({ ok: false }) : J({ reply: '- **Stay in**\n- <img src=x onerror=alert(1)>' }); }
+  if (url.includes('geocoding')) return J({ results: [{ name: 'Patna <b>x</b>', admin1: 'Bihar', country: 'India', feature_code: 'PPLA', latitude: 25.6, longitude: 85.1 }] });
+  if (url.includes('/api/chat')) { chatCalls++; try { lastChat = JSON.parse(opts.body); } catch {} return chatMode === 'fail' ? Promise.resolve({ ok: false }) : J({ reply: '- **Stay in**\n- <img src=x onerror=alert(1)>' }); }
   return Promise.reject(new Error('unmocked ' + url));
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -55,4 +55,21 @@ test('AI replies are escaped and sent only once on double click', async () => {
 test('falls back to built-in guidance when AI is down', async () => {
   chatMode = 'fail'; $('#msg').value = 'which mask?'; $('#send').click(); await wait(200);
   assert.match([...d.querySelectorAll('.msg.bot')].pop().textContent, /N95/);
+});
+
+test('assistant fetches live data for another city and offers to switch', async () => {
+  chatMode = 'ok'; $('#msg').value = 'How is the air in Patna?'; $('#send').click(); await wait(400);
+  assert.match(lastChat.context, /OTHER PLACE ASKED ABOUT: Patna/);
+  const last = [...d.querySelectorAll('.msg.bot')].pop();
+  assert.match(last.querySelector('button').textContent, /Patna/);
+});
+test('plain greetings are not treated as city names', async () => {
+  $('#msg').value = 'hello'; $('#send').click(); await wait(300);
+  assert.doesNotMatch(lastChat.context, /OTHER PLACE/);
+});
+
+test('chat renders **bold**, *italic* and numbered lists without stray asterisks', async () => {
+  const el = d.createElement('div'); w.eval("window.__md = md");
+  const out = w.__md('1. First\n* *Impact:* lower exposure by **40%**');
+  assert.doesNotMatch(out, /\*/); assert.match(out, /<i>Impact:<\/i>/); assert.match(out, /<b>40%<\/b>/);
 });
