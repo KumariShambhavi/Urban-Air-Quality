@@ -68,3 +68,14 @@ test('picks the best model the key can actually use (no hard-coded names)', asyn
   assert.equal(code, 200); assert.match(used[0], /gemini-3\.9-flash:generateContent/);
   assert.deepEqual(models.rank(['gemini-3.9-flash-live', 'gemini-2.5-flash', 'gemini-3.9-flash']), ['gemini-3.9-flash', 'gemini-2.5-flash']);
 });
+
+test('retries without thinking settings if Google rejects them with 400', async () => {
+  const seen = [];
+  global.fetch = async (u, o) => {
+    if (u.includes('/models?')) return { ok: true, json: async () => ({ models: [{ name: 'models/gemini-3.6-flash', supportedGenerationMethods: ['generateContent'] }] }) };
+    const cfg = JSON.parse(o.body).generationConfig; seen.push(!!cfg.thinkingConfig);
+    return cfg.thinkingConfig ? { ok: false, status: 400 } : gemini('worked');
+  };
+  const [code, out] = await call({ messages: MSG });
+  assert.equal(code, 200); assert.equal(out.reply, 'worked'); assert.deepEqual(seen, [true, false]);
+});

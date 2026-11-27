@@ -17,7 +17,7 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opa
 main,header{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:0 18px}
 h1,h2,h3{font-family:"Bricolage Grotesque",Figtree,sans-serif;line-height:1.1;margin:0}
 h2{font-size:1.35rem;margin-bottom:12px}
-header{padding-top:20px;padding-bottom:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+header{z-index:20;padding-top:20px;padding-bottom:8px;display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .brand{font:800 1.3rem "Bricolage Grotesque",sans-serif}
 .search{position:relative;display:flex;gap:8px;flex:1;min-width:260px;max-width:520px}
 input,select,button,textarea{font:inherit;color:inherit}
@@ -202,6 +202,7 @@ async function search(){
 }
 function setLoc(name, lat, lon){ state.loc = { name, lat, lon }; store.set('loc', state.loc); loadAir(); }
 $('#go').onclick = search; $('#q').onkeydown = e => { if (e.key === 'Enter') search(); };
+let sug; $('#q').oninput = () => { clearTimeout(sug); if ($('#q').value.trim().length >= 3) sug = setTimeout(search, 450); };
 $('#geo').onclick = () => {
   if (!navigator.geolocation) return showErr('Your browser does not support location. Search for your city instead.');
   navigator.geolocation.getCurrentPosition(p => setLoc('Your location', +p.coords.latitude.toFixed(3), +p.coords.longitude.toFixed(3)),
@@ -291,7 +292,10 @@ function buildPlan(){
 function renderPlan(){
   if (!state.air) return;
   $('#plan').className = '';
-  $('#plan').innerHTML = buildPlan().map(([t, items]) => `<div class="group"><h3>${t}</h3><ul>${items.map(i => `<li><b>${esc(i[0])}</b>${esc(i[1])}<em>Impact: ${esc(i[2])}</em></li>`).join('')}</ul></div>`).join('');
+  const P = state.p, tags = [['kids','children'],['elderly','elders'],['resp','asthma/heart/lung'],['pregnant','pregnancy'],['exercise','outdoor exercise'],['purifier','purifier at home']].filter(x => P[x[0]]).map(x => x[1]);
+  tags.push(MODES[P.commute] ? MODES[P.commute][0].toLowerCase() + ' commute' : 'work from home'); tags.push({ lpg:'LPG cooking', induction:'induction cooking', biomass:'wood/coal cooking' }[P.cooking]); if (P.heating === 'burn') tags.push('burning for heat');
+  const banner = `<div class="alert" id="pbanner">Personalised for ${esc(state.loc.name)} (AQI ${state.air.aqi}) and your household: ${esc(tags.filter(Boolean).join(', '))}</div>`;
+  $('#plan').innerHTML = banner + buildPlan().map(([t, items]) => `<div class="group"><h3>${t}</h3><ul>${items.map(i => `<li><b>${esc(i[0])}</b>${esc(i[1])}<em>Impact: ${esc(i[2])}</em></li>`).join('')}</ul></div>`).join('');
 }
 
 // ---------- impact calculator ----------
@@ -347,15 +351,16 @@ function reason(e){
   if (e.status === 404) return 'The AI endpoint was not found on this deployment.';
   const s = (e.detail || []).map(x => x.status);
   if (s.includes(400) || s.includes(403)) return 'Google rejected the API key. Check the key in Vercel.';
+  if (s.includes('timeout')) return 'Google took too long to answer. Try again.';
   if (s.includes(429)) return 'The free AI quota is used up for now.';
   return 'The AI service is busy or offline.';
 }
 let busy = false;
 async function ask(text){
   text = text.trim(); if (!text || busy) return; busy = true; $('#msg').value = ''; addMsg('user', text);
-  chat.push({ role: 'user', text }); const wait = addMsg('bot', 'Thinking...');
+  chat.push({ role: 'user', text }); const wait = addMsg('bot', 'Thinking... (can take up to 20 seconds)');
   try {
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 30000);
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 55000);
     const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal, body: JSON.stringify({ messages: chat.slice(-8), context: context() }) });
     clearTimeout(t); if (!r.ok) { let j = {}; try { j = await r.json(); } catch {} throw Object.assign(j, { status: r.status }); } const d = await r.json(); if (!d.reply) throw {};
     wait.remove(); addMsg('bot', d.reply); chat.push({ role: 'model', text: d.reply });
