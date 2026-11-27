@@ -50,6 +50,7 @@ module.exports = async (req, res) => {
   const context = String(body.context || '').slice(0, 1200);
 
   const deadline = Date.now() + 24000; // stay inside Vercel's 30s limit
+  const tried = [];
   for (const model of MODELS) {
     const left = deadline - Date.now();
     if (left < 2500) break;
@@ -68,15 +69,17 @@ module.exports = async (req, res) => {
           generationConfig: gen
         })
       });
-      if (!r.ok) { console.error('Gemini', model, r.status); continue; }
+      if (!r.ok) { console.error('Gemini', model, r.status); tried.push({ model, status: r.status }); continue; }
       const data = await r.json();
       const reply = (data.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
       if (reply) return res.status(200).json({ reply, model });
+      tried.push({ model, status: 'empty' });
     } catch (e) {
       console.error('Gemini error', model, e.name);
+      tried.push({ model, status: e.name === 'AbortError' ? 'timeout' : 'network' });
     } finally {
       clearTimeout(timer);
     }
   }
-  return res.status(502).json({ error: 'ai_unavailable' });
+  return res.status(502).json({ error: 'ai_unavailable', detail: tried });
 };

@@ -35,7 +35,8 @@ test('falls back to the next model on failure', async () => {
 });
 test('returns 502 when every model fails or is blocked', async () => {
   global.fetch = async () => ({ ok: true, json: async () => ({ promptFeedback: { blockReason: 'SAFETY' } }) });
-  assert.equal((await call({ messages: MSG }))[0], 502);
+  const bad = await call({ messages: MSG });
+  assert.equal(bad[0], 502); assert.ok(Array.isArray(bad[1].detail));
   global.fetch = async () => { throw new Error('net'); };
   assert.equal((await call({ messages: MSG }))[0], 502);
 });

@@ -24,6 +24,7 @@ test.before(async () => {
 });
 test.after(() => w.close());
 
+test('loads a default city immediately so the page is never empty', () => assert.equal($('#aqi').textContent, '178'));
 test('shows live city ranking on load', () => assert.ok($('#lb').children.length >= 10));
 test('loads AQI, 24h chart and 7-day outlook for a city', async () => {
   $('#quick button').click(); await wait(400);

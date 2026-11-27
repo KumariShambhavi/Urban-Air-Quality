@@ -339,6 +339,17 @@ function offline(q){
   if (/heat|heater|bonfire|burn/.test(s)) return '- Never burn wood, coal or trash in a closed room because of carbon monoxide.\n- Use layers, quilts or a safe electric heater.';
   return `- AQI in ${state.loc.name} is ${a} (${band(a)[1]}).\n- Best time outdoors: ${wl}.\n- Keep windows closed outside that window, run a purifier in the bedroom, and wear an N95 when outdoors.`;
 }
+function reason(e){
+  if (!e) return 'The AI did not respond.';
+  if (e.name === 'AbortError') return 'The AI took too long to answer.';
+  if (e.error === 'missing_key') return 'The server has no GEMINI_API_KEY yet.';
+  if (e.error === 'rate_limited' || e.error === 'busy') return 'Too many questions at once. Try again in a minute.';
+  if (e.status === 404) return 'The AI endpoint was not found on this deployment.';
+  const s = (e.detail || []).map(x => x.status);
+  if (s.includes(400) || s.includes(403)) return 'Google rejected the API key. Check the key in Vercel.';
+  if (s.includes(429)) return 'The free AI quota is used up for now.';
+  return 'The AI service is busy or offline.';
+}
 let busy = false;
 async function ask(text){
   text = text.trim(); if (!text || busy) return; busy = true; $('#msg').value = ''; addMsg('user', text);
@@ -346,10 +357,10 @@ async function ask(text){
   try {
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 30000);
     const r = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal, body: JSON.stringify({ messages: chat.slice(-8), context: context() }) });
-    clearTimeout(t); if (!r.ok) throw 0; const d = await r.json(); if (!d.reply) throw 0;
+    clearTimeout(t); if (!r.ok) { let j = {}; try { j = await r.json(); } catch {} throw Object.assign(j, { status: r.status }); } const d = await r.json(); if (!d.reply) throw {};
     wait.remove(); addMsg('bot', d.reply); chat.push({ role: 'model', text: d.reply });
-  } catch {
-    const o = offline(text); wait.remove(); addMsg('bot', o, 'Basic guidance mode: the AI service is busy or offline, so this answer comes from built-in rules.'); chat.push({ role: 'model', text: o });
+  } catch (e) {
+    const o = offline(text); wait.remove(); addMsg('bot', o, 'Basic guidance mode. ' + reason(e)); chat.push({ role: 'model', text: o });
   } finally { busy = false; }
 }
 $('#send').onclick = () => ask($('#msg').value); $('#msg').onkeydown = e => { if (e.key === 'Enter') ask($('#msg').value); };
@@ -410,7 +421,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && st
 drawScore(); loadBoard();
 
 document.addEventListener('click', e => { if (!e.target.closest('.search')) $('#results').classList.add('hidden'); });
-if (state.loc) loadAir();
+if (state.loc) loadAir(); else setLoc('Delhi', 28.614, 77.209); // show something live immediately
 </script>
 </body>
 </html>

@@ -51,6 +51,8 @@ Open http://localhost:3000. (Opening index.html directly works for air data, but
 - Modelled AQI (CAMS) can differ from your nearest ground station; it is guidance, not medical advice.
 
 ## Troubleshooting
+First, open `YOUR-LINK/api/health` in a browser. It shows whether the key is set and whether Google accepts it.
+
 | Symptom | Fix |
 |---|---|
 | Chat shows "Basic guidance mode" | Key missing/wrong, or free quota used. Check Vercel > Settings > Environment Variables, then Redeploy. Check Vercel > Logs for `Gemini ... 4xx`. |
