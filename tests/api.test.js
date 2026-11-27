@@ -79,3 +79,13 @@ test('retries without thinking settings if Google rejects them with 400', async 
   const [code, out] = await call({ messages: MSG });
   assert.equal(code, 200); assert.equal(out.reply, 'worked'); assert.deepEqual(seen, [true, false]);
 });
+
+test('plan mode and truncation are handled', async () => {
+  let sent;
+  global.fetch = async (u, o) => { if (u.includes('/models?')) return { ok: true, json: async () => ({}) }; sent = JSON.parse(o.body);
+    return { ok: true, json: async () => ({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ thought: true, text: 'hidden' }, { text: 'partial' }] } }] }) }; };
+  const [code, out] = await call({ messages: MSG, mode: 'plan' }, { ip: '5.5.5.5' });
+  assert.equal(out.reply, 'partial'); assert.equal(out.truncated, true);
+  assert.match(sent.system_instruction.parts[0].text, /PLAN MODE/);
+  assert.equal(sent.generationConfig.maxOutputTokens, 4096);
+});

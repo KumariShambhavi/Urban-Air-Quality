@@ -72,3 +72,6 @@ npm test
 
 ## Architecture
 `public/index.html` (UI + logic) -> Open-Meteo (live air + geocoding, no key) and `api/chat.js` (Vercel function) -> Gemini. The key never reaches the browser.
+
+## AQI scales
+The page defaults to India's National AQI (CPCB) and can switch to the US EPA scale. CPCB values are computed from live PM2.5 and PM10 with the official breakpoint tables (worst sub-index wins); daily values in the 7-day outlook use the day's mean PM, like the official 24-hour method. Hourly and "now" values are estimates because the free data source does not supply the official index. Safety guidance follows the stricter US scale. Breakpoint maths is unit-tested (`tests/app.test.js`).
