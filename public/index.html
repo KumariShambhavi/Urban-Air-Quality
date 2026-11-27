@@ -60,6 +60,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .note{font-size:.84rem;color:var(--mute);margin-top:10px}
 .err{background:#fbe9e7;border:1px solid #e3a59d;padding:10px 14px;border-radius:8px;margin-top:14px}
 .hidden{display:none}
+.skip{position:absolute;left:-999px;top:0;background:#fff;padding:8px;z-index:9}.skip:focus{left:8px}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#2f9e5b;margin-right:6px}
 @media(prefers-reduced-motion:no-preference){.dot{animation:pulse 1.6s infinite}}
 @keyframes pulse{50%{opacity:.25}}
@@ -76,6 +77,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 </style>
 </head>
 <body>
+<a href="#main" class="skip">Skip to content</a>
 <header>
   <div class="brand">Clear Air Daily</div>
   <div class="search">
@@ -85,7 +87,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     <div id="results" class="hidden"></div>
   </div>
 </header>
-<main>
+<main id="main">
   <div class="chips" id="quick"></div>
   <div id="error" class="err hidden" role="alert"></div>
 
@@ -106,7 +108,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
     <p id="windowTxt" style="margin:10px 0 0;font-weight:700"></p>
   </section>
 
-  <section class="panel" id="fcp" hidden>
+  <section class="panel" id="fcp" hidden aria-label="Seven day outlook">
     <h2>7-day smog outlook</h2>
     <div class="fc" id="fc"></div>
     <div class="alert" id="fcAlert"></div>
@@ -164,7 +166,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   <section class="panel">
     <h2>Ask the assistant</h2>
     <div class="chips" id="prompts"></div>
-    <div id="log"></div>
+    <div id="log" role="log" aria-live="polite" aria-label="Conversation with the assistant"></div>
     <div class="ask"><input id="msg" type="text" placeholder="e.g. Can my 5-year-old play outside today?" aria-label="Your question"><button id="send">Ask</button></div>
     <p class="note">General guidance, not medical advice. Numbers are estimates based on public emission factors and rules of thumb. Air data: Open-Meteo (CAMS model), updated hourly.</p>
   </section>

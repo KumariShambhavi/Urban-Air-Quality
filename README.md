@@ -60,3 +60,13 @@ Open http://localhost:3000. (Opening index.html directly works for air data, but
 | 404 on the live link | In Vercel project settings, Output Directory must be `public` (vercel.json sets this). |
 | Location button does nothing | Browsers allow it only on https (Vercel gives https) and after you click Allow. |
 Never commit `.env` or paste the key in chat/screenshots. If leaked, delete it in AI Studio and make a new one.
+
+## Tests
+```
+npm install
+npm test
+```
+14 automated tests cover the serverless function (validation, model fallback, rate limiting, input caps) and the UI (live data, plan logic, calculator, XSS escaping, offline fallback).
+
+## Architecture
+`public/index.html` (UI + logic) -> Open-Meteo (live air + geocoding, no key) and `api/chat.js` (Vercel function) -> Gemini. The key never reaches the browser.
